@@ -1,4 +1,4 @@
-//TODO appeanance: 1344-18 sensor - multisensor https://specificationrefs.bluetooth.com/assigned-values/Appearance%20Values.pdf
+//TODO appeanance: 1344-18 = 1362 sensor - multisensor https://specificationrefs.bluetooth.com/assigned-values/Appearance%20Values.pdf
 
 #include <Arduino.h>
 #include <TaskScheduler.h>
@@ -6,7 +6,7 @@
 // Scheduler
 Scheduler ts;
 
-#ifdef LOLIND32PRO
+#ifdef ARDUINO_LOLIN_D32_PRO
 #define LED_BUILTIN GPIO_NUM_5
 #else
 #define LED_BUILTIN GPIO_NUM_2
@@ -58,11 +58,12 @@ canbus_msgslow_t message_slow;
 #define BLE_SERVICE_UUID "6E400001-59f2-4a41-9acd-cd56fb435d64"
 #define BLE_SLOW_CHARACTERISTIC_UUID "6E400011-59f2-4a41-9acd-cd56fb435d64"
 #define BLE_FAST_CHARACTERISTIC_UUID "6E400012-59f2-4a41-9acd-cd56fb435d64"
-#define BLE_DEVICE_ID "Ducati-Panigale0000"
+#define BLE_DEVICE_ID "DuCan00"
 
 #define BLE_FASTTASK_INTERVAL 50
 #define BLE_SLOWTASK_INTERVAL 1000
 
+String deviceid = BLE_DEVICE_ID;
 static NimBLEServer *pServer;
 NimBLECharacteristic *pFastCharacteristic = NULL;
 NimBLECharacteristic *pSlowCharacteristic = NULL;
@@ -108,12 +109,15 @@ class MyServerCallbacks : public NimBLEServerCallbacks
   void onConnect(NimBLEServer *pServer)
   {
     BLEdeviceConnected = true;
+    log_i("Client connected");
+    // NimBLEDevice::startAdvertising(); 
   };
 
   void onConnect(NimBLEServer *pServer, ble_gap_conn_desc *desc)
   {
-    Serial.print("Client address: ");
-    Serial.println(NimBLEAddress(desc->peer_ota_addr).toString().c_str());
+    BLEdeviceConnected = true;
+    log_i("Client address: %s", NimBLEAddress(desc->peer_ota_addr).toString().c_str());
+    // NimBLEDevice::stopAdvertising();
   }
 
   void onDisconnect(NimBLEServer *pServer)
@@ -121,8 +125,8 @@ class MyServerCallbacks : public NimBLEServerCallbacks
     BLEdeviceConnected = false;
     tNotify_fast.disable();
     tNotify_slow.disable();
-    Serial.println("Client disconnected - start advertising");
-    NimBLEDevice::startAdvertising();
+    log_i("Client disconnected - start advertising");
+    // NimBLEDevice::startAdvertising();
   }
 };
 class MyCharacteristicCallbacks : public NimBLECharacteristicCallbacks
@@ -150,32 +154,18 @@ class MyCharacteristicCallbacks : public NimBLECharacteristicCallbacks
       str += " Subscribed to notifications and indications for ";
     }
     str += std::string(pCharacteristic->getUUID()).c_str();
-    // Start notifications when a client connect
+    // Start notifications when a client subscribes
 
-    // Initialize all messages to 1
-    for (int i=0; i < CANBUS_MSGFAST_SIZE; i++) {
-      ble_msg_fast[i]=(uint8_t) 255;
-    }   
+    // Initialize APS to 1
+    uint8_t aps_init =1;
+    memcpy(ble_msg_fast + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed, &aps_init, sizeof message_fast.aps);
     pFastCharacteristic->setValue(ble_msg_fast, CANBUS_MSGFAST_SIZE);
     pFastCharacteristic->notify();
     delay(5);
-    for (int i=0; i < CANBUS_MSGFAST_SIZE; i++) {
-      ble_msg_fast[i]=0;
-    }
+    aps_init=100;
+    memcpy(ble_msg_fast + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed, &aps_init, sizeof message_fast.aps);
     pFastCharacteristic->setValue(ble_msg_fast, CANBUS_MSGFAST_SIZE);
     pFastCharacteristic->notify();
-    delay(5);
-    for (int i=0; i < CANBUS_MSGSLOW_SIZE; i++) {
-      ble_msg_slow[i]=(uint8_t) 255;
-    }
-    pSlowCharacteristic->setValue(ble_msg_slow, CANBUS_MSGSLOW_SIZE);
-    pSlowCharacteristic->notify();
-    delay(5);
-    for (int i=0; i < CANBUS_MSGSLOW_SIZE; i++) {
-      ble_msg_slow[i]=0;
-    }
-    pSlowCharacteristic->setValue(ble_msg_slow, CANBUS_MSGSLOW_SIZE);
-    pSlowCharacteristic->notify();
     delay(5);
     tNotify_fast.enable();
     tNotify_slow.enable();
@@ -185,6 +175,7 @@ static MyCharacteristicCallbacks chrCallbacks;
 
 
 /* --------------------- CanBus Functions ------------------ */
+#if !defined(CAN_SIMULATOR_MODE)
 void onReceive(int packetSize)
 {
   // received a packet
@@ -214,6 +205,7 @@ void onReceive(int packetSize)
     message_slow.battery = message[4];
   }
 }
+#endif // #if !defined(CAN_SIMULATOR_MODE)
 
 // Pretty print a message
 bool to_hex(char* dest, size_t dest_len, const uint8_t* values, size_t val_len) {
@@ -248,19 +240,52 @@ void reportcounters(){
 }
 Task tReport(1000, -1, &reportcounters, &ts, true);
 
+/* --------------------- Simulation Functions ------------------ */
+
+#if defined(CAN_SIMULATOR_MODE)
+
+// this goes from 0 to 100 then it resets
+uint base_counter = 1;
+const uint base_cycles = 1000;
+
+void handle_dm_increase()
+{
+  // complete update in 100 cycles
+  message_fast.rearwheelspeed = 5+base_counter*(300-5)/base_cycles;
+  message_fast.rpm            = 2000+base_counter*(12000-2000)/base_cycles;
+  message_fast.aps            = 1+base_counter*99/base_cycles;
+  message_fast.gear           = 1+base_counter*5/base_cycles;
+  message_slow.enginetemp     = 70+base_counter*(110-70)/base_cycles;
+  message_slow.ambientemp     = 16+base_counter*(40-16)/base_cycles;
+  message_slow.battery        = 120+base_counter*(140-120)/base_cycles;
+  if (base_counter++>base_cycles)
+    base_counter=0;
+}
+Task tIncreaseDM(100, -1, &handle_dm_increase, &ts, true);
+
+#endif
+
+/* --------------------- Setup Loop ------------------ */
+
 void setup()
 {
   // Create the BLE Device
-  NimBLEDevice::init(BLE_DEVICE_ID);
-  delay(1000);
+  NimBLEDevice::init("DuCan00");
+  // NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
   // Optional: set the transmit power, default is 3db
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);                             /** +9db */
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_ADV);       /** +9db */
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_CONN_HDL0); /** +9db */
   NimBLEDevice::setSecurityIOCap((uint8_t)BLE_HS_IO_NO_INPUT_OUTPUT);
-  NimBLEDevice::setSecurityAuth(/*BLE_SM_PAIR_AUTHREQ_BOND | BLE_SM_PAIR_AUTHREQ_MITM |*/ (uint8_t)BLE_SM_PAIR_AUTHREQ_SC);
+  //NimBLEDevice::setMTU(185);
+  // ESP_LE_AUTH_NO_BOND
+  NimBLEDevice::setSecurityAuth(false,false,false);
+  // NimBLEDevice::setSecurityAuth(/*BLE_SM_PAIR_AUTHREQ_BOND | BLE_SM_PAIR_AUTHREQ_MITM |*/ (uint8_t)BLE_SM_PAIR_AUTHREQ_SC);
 
   // Create the BLE Server
   pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
+  pServer->advertiseOnDisconnect(true);
 
   // Create the BLE Service
   NimBLEService *pService = pServer->createService(BLE_SERVICE_UUID);
@@ -280,8 +305,14 @@ void setup()
 
   // Start advertising
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+  // define appearance, from https://www.bluetooth.com/wp-content/uploads/Sitecore-Media-Library/Gatt/Xml/Characteristics/org.bluetooth.characteristic.gap.appearance.xml
+  pAdvertising->setAppearance(1344); // this might crash esp32 ble stack
   pAdvertising->addServiceUUID(pService->getUUID());
-  pAdvertising->setScanResponse(false);
+  pAdvertising->setScanResponse(true);
+  // pAdvertising->setScanResponse(false);
+  // pAdvertising->setMinPreferred(0x06); // functions that help with iPhone connections issue -> find out more at https://github.com/h2zero/NimBLE-Arduino/issues/129
+  // pAdvertising->setMinPreferred(0x0);  // set value to 0x00 to not advertise this parameter
+
   pAdvertising->start();
 
   log_i( "Waiting a client connection to notify...");
@@ -293,6 +324,7 @@ void setup()
   gpio_set_direction(LED_BUILTIN, GPIO_MODE_OUTPUT);
   gpio_set_level(LED_BUILTIN, LOW);
 
+  #if !defined(CAN_SIMULATOR_MODE)
   log_i( "Setting up CANBUS");
   CAN.setPins(RX_GPIO_NUM, TX_GPIO_NUM);
   CAN.observe();
@@ -304,12 +336,12 @@ void setup()
       ;
   }
   CAN.onReceive(onReceive);
+  #else
+  log_i("Running in simulation of CAN messages");
+  #endif // #if !defined(CAN_SIMULATOR_MODE)
   log_i( "Starting main loop routine");
   tReport.enable();
 }
-
-
-
 
 void loop()
 {

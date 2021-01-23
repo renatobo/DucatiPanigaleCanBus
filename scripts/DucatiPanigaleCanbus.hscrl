@@ -19,7 +19,7 @@
 
     local errorMsg = false
     local sensorname = "Ducati-Panigale"
-    local sensordevicepattern = "Ducati-Panigale...."
+    local sensordevicepattern = "DuCan.."
     local bleservice = "6E400001-59f2-4a41-9acd-cd56fb435d64"
     -- local blecharacteristicstatic = "6E400010-59f2-4a41-9acd-cd56fb435d64"
     local blecharacteristicslow = "6E400011-59f2-4a41-9acd-cd56fb435d64"
