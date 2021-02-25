@@ -1,15 +1,27 @@
-//TODO appeanance: 1344-18 = 1362 sensor - multisensor https://specificationrefs.bluetooth.com/assigned-values/Appearance%20Values.pdf
+/******************************************************************************
+
+  DucatiPanigaleCanBus: monitor CANBUS messages and report them to HLT
+  More info at https://github.com/renatobo/DucatiPanigaleCanBus
+  Renato Bonomini https://github.com/renatobo
+
+******************************************************************************/
 
 #include <Arduino.h>
 #include <TaskScheduler.h>
 
+// Troubleshooting options
+//
+// Define the macro CAN_SIMULATOR_MODE to generate linear looping values for counters instead of reading from CANBUS
+// #define CAN_SIMULATOR_MODE
+
 // Scheduler
 Scheduler ts;
 
+// Standard configuration: we flip status of LED_BUILTIN to show the main loop is active
 #ifdef ARDUINO_LOLIN_D32_PRO
-#define LED_BUILTIN GPIO_NUM_5
+#define LED_STATUS GPIO_NUM_5
 #else
-#define LED_BUILTIN GPIO_NUM_2
+#define LED_STATUS GPIO_NUM_2
 #endif
 
 /* ----------- CANBUS definitions ------------- */
@@ -23,33 +35,43 @@ Scheduler ts;
 #define ID_FRAME100 0x100
 #define ID_FRAME18 0x18
 
-#define CANBUS_MSGFAST_SIZE 6
-#define CANBUS_MSGSLOW_SIZE 3
-
+/* ------ counters for informational and debug purposes ----- */
 uint32_t counter_18;
 uint32_t counter_80;
 uint32_t counter_100;
 
-
-// rpm, wheelspeed, tps, gear
+// Structure to hold "fast frequency" messages type 1 (rpm, wheelspeed, tps, gear)
+#define BLE_FASTTASK_INTERVAL 50
+#define CANBUS_FASTMSG_TYPE 1
+#define CANBUS_MSGTYPE1_SIZE 7
+#define CANBUS_FAST_SIZE CANBUS_MSGTYPE1_SIZE
 typedef struct
 {
+  const uint8_t msgtype = CANBUS_FASTMSG_TYPE;
   uint16_t rpm;
   uint16_t rearwheelspeed;
   uint8_t aps;
   int8_t gear;
-} canbus_msgfast_t;
+} canbus_msgtype1_t;
 
-//  enginetemperature, ambientemperature, battery
+canbus_msgtype1_t message_fast;
+uint8_t ble_msg_fast[CANBUS_FAST_SIZE];
+
+// Structure to hold "slow frequency" messages type 2 (enginetemperature, ambientemperature, battery)
+#define BLE_SLOWTASK_INTERVAL 1000
+#define CANBUS_SLOWMSG_TYPE 2
+#define CANBUS_SLOW_SIZE CANBUS_MSGTYPE2_SIZE
+#define CANBUS_MSGTYPE2_SIZE 4
 typedef struct
 {
+  const uint8_t msgtype = CANBUS_SLOWMSG_TYPE;
   uint8_t enginetemp;
   uint8_t ambientemp;
   uint8_t battery;
-} canbus_msgslow_t;
+} canbus_msgtype2_t;
 
-canbus_msgfast_t message_fast;
-canbus_msgslow_t message_slow;
+canbus_msgtype2_t message_slow;
+uint8_t ble_msg_slow[CANBUS_SLOW_SIZE];
 
 /* --------------------- BLE Definitions ------------------ */
 #include <NimBLEDevice.h>
@@ -60,29 +82,23 @@ canbus_msgslow_t message_slow;
 #define BLE_FAST_CHARACTERISTIC_UUID "6E400012-59f2-4a41-9acd-cd56fb435d64"
 #define BLE_DEVICE_ID "DuCan00"
 
-#define BLE_FASTTASK_INTERVAL 50
-#define BLE_SLOWTASK_INTERVAL 1000
-
 String deviceid = BLE_DEVICE_ID;
 static NimBLEServer *pServer;
 NimBLECharacteristic *pFastCharacteristic = NULL;
 NimBLECharacteristic *pSlowCharacteristic = NULL;
 bool BLEdeviceConnected = false;
 
-uint8_t ble_msg_fast[CANBUS_MSGFAST_SIZE];
-uint8_t ble_msg_slow[CANBUS_MSGSLOW_SIZE];
-
 // notify a fast frequency message
 void handle_ble_notify_msg_fast()
 {
   if (BLEdeviceConnected)
   {
-    memcpy(ble_msg_fast, &message_fast.rpm, sizeof message_fast.rpm);
-    memcpy(ble_msg_fast + sizeof message_fast.rpm, &message_fast.rearwheelspeed, sizeof message_fast.rearwheelspeed);
-    memcpy(ble_msg_fast + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed, &message_fast.aps, sizeof message_fast.aps);
-    memcpy(ble_msg_fast + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed + sizeof message_fast.aps, &message_fast.gear, sizeof message_fast.gear);
+    memcpy(ble_msg_fast + sizeof message_fast.msgtype, &message_fast.rpm, sizeof message_fast.rpm);
+    memcpy(ble_msg_fast + sizeof message_fast.msgtype + sizeof message_fast.rpm, &message_fast.rearwheelspeed, sizeof message_fast.rearwheelspeed);
+    memcpy(ble_msg_fast + sizeof message_fast.msgtype + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed, &message_fast.aps, sizeof message_fast.aps);
+    memcpy(ble_msg_fast + sizeof message_fast.msgtype + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed + sizeof message_fast.aps, &message_fast.gear, sizeof message_fast.gear);
 
-    pFastCharacteristic->setValue(ble_msg_fast, CANBUS_MSGFAST_SIZE);
+    pFastCharacteristic->setValue(ble_msg_fast, CANBUS_FAST_SIZE);
     pFastCharacteristic->notify();
   }
 }
@@ -93,11 +109,11 @@ void handle_ble_notify_msg_slow()
 {
   if (BLEdeviceConnected)
   {
-    memcpy(ble_msg_slow, &message_slow.enginetemp, sizeof message_slow.enginetemp);
-    memcpy(ble_msg_slow + sizeof message_slow.enginetemp, &message_slow.ambientemp, sizeof message_slow.ambientemp);
-    memcpy(ble_msg_slow + sizeof message_slow.enginetemp + sizeof message_slow.ambientemp, &message_slow.battery, sizeof message_slow.battery);
+    memcpy(ble_msg_slow + sizeof message_slow.msgtype, &message_slow.enginetemp, sizeof message_slow.enginetemp);
+    memcpy(ble_msg_slow + sizeof message_slow.msgtype + sizeof message_slow.enginetemp, &message_slow.ambientemp, sizeof message_slow.ambientemp);
+    memcpy(ble_msg_slow + sizeof message_slow.msgtype + sizeof message_slow.enginetemp + sizeof message_slow.ambientemp, &message_slow.battery, sizeof message_slow.battery);
 
-    pSlowCharacteristic->setValue(ble_msg_slow, CANBUS_MSGSLOW_SIZE);
+    pSlowCharacteristic->setValue(ble_msg_slow, CANBUS_SLOW_SIZE);
     pSlowCharacteristic->notify();
   }
 }
@@ -133,40 +149,52 @@ class MyCharacteristicCallbacks : public NimBLECharacteristicCallbacks
 {
   void onSubscribe(NimBLECharacteristic *pCharacteristic, ble_gap_conn_desc *desc, uint16_t subValue)
   {
-    String str = "Client ID: ";
-    str += desc->conn_handle;
-    str += " Address: ";
-    str += std::string(NimBLEAddress(desc->peer_ota_addr)).c_str();
+    #if (CORE_DEBUG_LEVEL > 0)
+    // Be verbose on client subscription activity when debug level is not null
+    String logmessage = "Client ID: ";
+    logmessage += desc->conn_handle;
+    logmessage += " Address: ";
+    logmessage += std::string(NimBLEAddress(desc->peer_ota_addr)).c_str();
     if (subValue == 0)
     {
-      str += " Unsubscribed to ";
+      logmessage += " Unsubscribed to ";
     }
     else if (subValue == 1)
     {
-      str += " Subscribed to notifications for ";
+      logmessage += " Subscribed to notifications for ";
     }
     else if (subValue == 2)
     {
-      str += " Subscribed to indications for ";
+      logmessage += " Subscribed to indications for ";
     }
     else if (subValue == 3)
     {
-      str += " Subscribed to notifications and indications for ";
+      logmessage += " Subscribed to notifications and indications for ";
     }
-    str += std::string(pCharacteristic->getUUID()).c_str();
+    logmessage += std::string(pCharacteristic->getUUID()).c_str();
+    log_i("New sub: %s",logmessage);
+    #endif
     // Start notifications when a client subscribes
 
+    log_i("Initialize message version variables: FAST %d, SLOW %d",message_fast.msgtype,message_slow.msgtype );
+    // Initialize the message type version, once.
+    memcpy(ble_msg_fast , &message_fast.msgtype, sizeof message_fast.msgtype);
+    memcpy(ble_msg_slow , &message_slow.msgtype, sizeof message_slow.msgtype);
+
+    // HLT normalizes APS input, so we trigger a MAX-MIN sequence to let us send 0-1 values later
     // Initialize APS to 1
+    log_i("Prime APS normalization to 1-100");
     uint8_t aps_init =1;
-    memcpy(ble_msg_fast + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed, &aps_init, sizeof message_fast.aps);
-    pFastCharacteristic->setValue(ble_msg_fast, CANBUS_MSGFAST_SIZE);
+    memcpy(ble_msg_fast + sizeof message_fast.msgtype + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed, &aps_init, sizeof message_fast.aps);
+    pFastCharacteristic->setValue(ble_msg_fast, CANBUS_FAST_SIZE);
     pFastCharacteristic->notify();
     delay(5);
     aps_init=100;
-    memcpy(ble_msg_fast + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed, &aps_init, sizeof message_fast.aps);
-    pFastCharacteristic->setValue(ble_msg_fast, CANBUS_MSGFAST_SIZE);
+    memcpy(ble_msg_fast + sizeof message_fast.msgtype + sizeof message_fast.rpm + sizeof message_fast.rearwheelspeed, &aps_init, sizeof message_fast.aps);
+    pFastCharacteristic->setValue(ble_msg_fast, CANBUS_FAST_SIZE);
     pFastCharacteristic->notify();
     delay(5);
+
     tNotify_fast.enable();
     tNotify_slow.enable();
   };
@@ -207,7 +235,8 @@ void onReceive(int packetSize)
 }
 #endif // #if !defined(CAN_SIMULATOR_MODE)
 
-// Pretty print a message
+#if (CORE_DEBUG_LEVEL > 0)
+// Pretty print a CANBUS message
 bool to_hex(char* dest, size_t dest_len, const uint8_t* values, size_t val_len) {
     if(dest_len < (val_len*2+1)) /* check that dest is large enough */
         return false;
@@ -220,6 +249,7 @@ bool to_hex(char* dest, size_t dest_len, const uint8_t* values, size_t val_len) 
     }
     return true;
 }
+#endif
 
 bool ledon;
 void reportcounters(){
@@ -236,7 +266,7 @@ void reportcounters(){
   slowmessagehex, fastmessagehex);
   #endif
   ledon = !ledon;
-  digitalWrite(LED_BUILTIN, (ledon ? HIGH : LOW)); // set pin to the opposite state
+  digitalWrite(LED_STATUS, (ledon ? HIGH : LOW)); // set pin to the opposite state
 }
 Task tReport(1000, -1, &reportcounters, &ts, true);
 
@@ -270,7 +300,7 @@ Task tIncreaseDM(100, -1, &handle_dm_increase, &ts, true);
 void setup()
 {
   // Create the BLE Device
-  NimBLEDevice::init("DuCan00");
+  NimBLEDevice::init(BLE_DEVICE_ID);
   // NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
   // Optional: set the transmit power, default is 3db
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);                             /** +9db */
@@ -306,6 +336,7 @@ void setup()
   // Start advertising
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   // define appearance, from https://www.bluetooth.com/wp-content/uploads/Sitecore-Media-Library/Gatt/Xml/Characteristics/org.bluetooth.characteristic.gap.appearance.xml
+  // TODO appearance: 1344-18 = 1362 sensor - multisensor https://specificationrefs.bluetooth.com/assigned-values/Appearance%20Values.pdf
   pAdvertising->setAppearance(1344); // this might crash esp32 ble stack
   pAdvertising->addServiceUUID(pService->getUUID());
   pAdvertising->setScanResponse(true);
@@ -317,12 +348,10 @@ void setup()
 
   log_i( "Waiting a client connection to notify...");
 
-  // initialize values
-
-  gpio_reset_pin(LED_BUILTIN);
+  gpio_reset_pin(LED_STATUS);
   /* Set the GPIO as a push/pull output */
-  gpio_set_direction(LED_BUILTIN, GPIO_MODE_OUTPUT);
-  gpio_set_level(LED_BUILTIN, LOW);
+  gpio_set_direction(LED_STATUS, GPIO_MODE_OUTPUT);
+  gpio_set_level(LED_STATUS, LOW);
 
   #if !defined(CAN_SIMULATOR_MODE)
   log_i( "Setting up CANBUS");
@@ -332,8 +361,30 @@ void setup()
   if (!CAN.begin(500E3))
   {
     log_e("Starting CAN failed!");
-    while (1)
-      ;
+    // Fade the activity led to suggest something is not right
+    int freq = 5000;
+    int ledChannel = 0;
+    int resolution = 8;
+    ledcSetup(ledChannel, freq, resolution);
+    ledcAttachPin(LED_STATUS, ledChannel);
+    unsigned long InTenSeconds = millis()+10000;
+    
+    while (millis()<InTenSeconds) {
+      for (int dutyCycle = 0; dutyCycle <= 255; dutyCycle++) {
+        ledcWrite(ledChannel, dutyCycle);
+        delay(2);
+      }
+ 
+    for (int dutyCycle = 255; dutyCycle >= 0; dutyCycle--) {
+        ledcWrite(ledChannel, dutyCycle);
+        delay(2);
+      }
+    }
+    // 10 seconds have gone, restart and hope for better luck
+    
+    ESP.restart();
+  } else {
+    log_i("Connected to CANBUS");
   }
   CAN.onReceive(onReceive);
   #else
@@ -343,6 +394,7 @@ void setup()
   tReport.enable();
 }
 
+// In the main loop we really don't do anything right now
 void loop()
 {
   ts.execute();

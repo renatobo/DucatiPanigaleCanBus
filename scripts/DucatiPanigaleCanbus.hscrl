@@ -14,7 +14,6 @@
 	<purpose>sensor.btle</purpose>
 	<replacing>false</replacing>
 	<script><![CDATA[
-
     -- todo: add engine.wheelspeed
 
     local errorMsg = false
@@ -110,28 +109,41 @@
         -- rpm, tps, gear
 		----tracecall(gnss, "sensor.bytesread(" .. ----tracebytes(message) .. ")")
 		if #message > 1 then
-			-- Create a new and empty set of channels 
-			enginechannelset = {}
 
-            -- Parsing RPM, 2 bytes
-			-- engine.rpm: engine rounds per minute (RPM); integer 0..16383; mandatory 
-			-- wheelspeed 2 bytes
-			-- engine.wheelspeed: wheel speed in km/h; integer; optional; 
-            -- Parsing APS, 1 byte 
-            -- engine.tps: throttle or pedal position; double 0..100 percent; mandatory; engine.throttle is a valid synonym
-            -- Parsing gear, 1 byte 
-            -- engine.gear [v23]: gear with -1 rear, and 0 neutral; integer; optional; usually derived from speed, rpms, gear
-            -- and drive ratios, this channel can be used to feed in a gear measured 
+			local messagetype
+			messagetype = string.unpack("I1", message)
 
-            enginechannelset.rpm, enginechannelset.wheelspeed, enginechannelset.tps, enginechannelset.gear = string.unpack("I2I2I1i1", message)
-			-- Pass result to app
-			sensor.queuechannelset(enginechannelset, engine)
-			sensor.rawupdatedforsensortype(engine) -- Rate Update
+			if messagetype == 1 then
 
+				-- Create a new and empty set of channels 
+				enginechannelset = {}
+
+				-- Parsing RPM, 2 bytes
+				-- engine.rpm: engine rounds per minute (RPM); integer 0..16383; mandatory 
+				-- wheelspeed 2 bytes
+				-- engine.wheelspeed: wheel speed in km/h; integer; optional; 
+				-- Parsing APS, 1 byte 
+				-- engine.tps: throttle or pedal position; double 0..100 percent; mandatory; engine.throttle is a valid synonym
+				-- Parsing gear, 1 byte 
+				-- engine.gear [v23]: gear with -1 rear, and 0 neutral; integer; optional; usually derived from speed, rpms, gear
+				-- and drive ratios, this channel can be used to feed in a gear measured 
+				
+				-- we use pos=2 to skip the message byte we just read
+				enginechannelset.rpm, enginechannelset.wheelspeed, enginechannelset.tps, enginechannelset.gear = string.unpack("I2I2I1i1", message,2)
+				-- Pass result to app
+				sensor.queuechannelset(enginechannelset, engine)
+				sensor.rawupdatedforsensortype(engine) -- Rate Update
+			else
+				if errorMsg == false then
+					error("Unrecognized Fast message version: " .. messagetype .. ". Update your HLT script")
+					errorMsg = true
+				end
+				sensor.queuechannelset(nil, engine)
+			end
 		else
 			-- Signal app we have received an invalid fix
 			if errorMsg == false then
-				error("Unexpected BLE message size: " .. #message .. " bytes")
+				error("Unexpected Fast BLE message size: " .. #message .. " bytes. Update your HLT script")
 				errorMsg = true
 			end
 			sensor.queuechannelset(nil, engine)
@@ -143,26 +155,39 @@
         -- enginetemperature, ambientemperature, battery
 
 		----tracecall(gnss, "sensor.slowbytesread(" .. ----tracebytes(message) .. ")")
-		if #message == 3 then
-			-- Create a new and empty set of channels 
-            enginechannelset = {}    
-            -- Parsing engine temp, byte 1
-            -- engine.enginetemp: coolant temperature; integer -40..215 degree Celsius; optional
-            -- Parsing environmental temp, byte 2
-            -- engine.iat: intake air temperature; integer -40..215 degree Celsius; optional 
-            -- engine.battery: voltage of board battery; double, 1.0 = 1V; optional; not stored permanently 
-            local battery
-            enginechannelset.enginetemp, enginechannelset.iat, battery = string.unpack("I1I1I1", message)
-            -- battery is read as unsigned int (0..256) as in the original source so we divide by ten
-            enginechannelset.battery = battery / 10
-			-- Pass result to app
-			sensor.queuechannelset(enginechannelset, engine)
-			-- sensor.rawupdatedforsensortype(engine) -- Rate Update, not updated to keep only the highest frequency of the other messages
+		if #message > 1 then
+			local messagetype
+			messagetype = string.unpack("I1", message)
 
+			if messagetype == 2 then
+				
+				-- Create a new and empty set of channels 
+				enginechannelset = {}    
+				-- Parsing engine temp, byte 1
+				-- engine.enginetemp: coolant temperature; integer -40..215 degree Celsius; optional
+				-- Parsing environmental temp, byte 2
+				-- engine.iat: intake air temperature; integer -40..215 degree Celsius; optional 
+				-- engine.battery: voltage of board battery; double, 1.0 = 1V; optional; not stored permanently 
+				
+				local battery
+				-- we use pos=2 to skip the message byte we just read
+				enginechannelset.enginetemp, enginechannelset.iat, battery = string.unpack("I1I1I1", message,2)
+				-- battery is read as unsigned int (0..256) as in the original source so we divide by ten
+				enginechannelset.battery = battery / 10
+				-- Pass result to app
+				sensor.queuechannelset(enginechannelset, engine)
+				-- sensor.rawupdatedforsensortype(engine) -- Rate Update, not updated to keep only the highest frequency of the other messages
+			else 
+				if errorMsg == false then
+					error("Unrecognized Slow message version: " .. messagetype .. ". Update your HLT script")
+					errorMsg = true
+				end
+				sensor.queuechannelset(nil, engine)
+			end
 		else
 			-- Signal app we have received an invalid fix
 			if errorMsg == false then
-				error("Unexpected BLE message size: " .. #message .. " bytes")
+				error("Unexpected Slow BLE message size: " .. #message .. " bytes. Update your HLT script")
 				errorMsg = true
 			end
 			sensor.queuechannelset(nil, engine)
