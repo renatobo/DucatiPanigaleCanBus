@@ -4,6 +4,7 @@
 - [Setup of Harry Lap Timer](#setup-of-harry-lap-timer)
 - [Hardware](#hardware)
 - [Schematics](#schematics)
+- [Building the software in Platform IO and Arduino IDE](#building-the-software-in-platform-io-and-arduino-ide)
 - [Credits](#credits)
 
 ## What is DucatiPanigaleCanBus?
@@ -65,6 +66,16 @@ In a nutshell:
 
 - Pin1 (+12) and Pin2 (ground) connect to the buck converter to power the ESP32
 - Pin3 and Pin4 carry the CANBUS signal going to the transceiver
+
+## Building the software in Platform IO and Arduino IDE
+
+This project is best handled with Platform.io. Nonetheless, it uses the Arduino framework so you can use the Arduino IDE as well.
+
+Steps required to compile this in the Arduino IDE
+
+- copy content of `src` and `include` into your sketch folder
+- perform a `git clone https://github.com/timurrrr/arduino-CAN` in the sketch folder, or copy a zip file from github directly
+- move the content of `arduino-CAN/src` in the main folder of your sketch
 
 ## Credits
 
