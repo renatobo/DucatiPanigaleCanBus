@@ -88,4 +88,4 @@ Other projects that inspired this work are
 
 - The excellent work performed by MrCanBus [in this thread](https://www.ducati.ms/threads/canbus-data-on-you-android-device-via-bluetooth.337705/) and his [CanBus sniffer](https://github.com/MrCanBus/MTS1200-CANBUS)
 - Collective decoding of Ducati CANBUS messages ([spreadsheet](https://docs.google.com/spreadsheets/d/1-NJ9OlGQYTGMzBzwDPYn-aI_7_ign9SCiscKZufx3Uw/edit?pli=1#gid=1950998351))
-- Field testing and motivation by https://github.com/dookie454 , including porting to car PIDs and TFT display of data 
+- Field testing and motivation by [@dookie454](https://github.com/dookie454), including porting to car PIDs and TFT display of data
