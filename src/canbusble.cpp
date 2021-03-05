@@ -20,6 +20,9 @@
 // Define the connections used by your ESP32 in the pinout file
 #include "canbusble_pinout.h"
 
+// Name used as prefix or name for BLE, WiFi, OTA hostname
+#define DEVICE_ID "DuCan"
+
 // Scheduler for periodic tasks, from arkhipenko/TaskScheduler
 #include <TaskScheduler.h>
 Scheduler ts;
@@ -93,7 +96,7 @@ void status_led_flip()
 #define BLE_ENGINEDATA_SERVICE_UUID "6E400001-59f2-4a41-9acd-cd56fb435d64"
 #define BLE_SLOW_ENGINEDATA_CHARACTERISTIC_UUID "6E400011-59f2-4a41-9acd-cd56fb435d64"
 #define BLE_FAST_ENGINEDATA_CHARACTERISTIC_UUID "6E400012-59f2-4a41-9acd-cd56fb435d64"
-#define BLE_DEVICE_ID_PREFIX "DuCan"
+#define BLE_DEVICE_ID_PREFIX DEVICE_ID
 
 static NimBLEServer *pServer;
 NimBLECharacteristic *pFastCharacteristic = NULL;
@@ -307,6 +310,27 @@ Task tIncreaseDM(100, -1, &handle_dm_increase, &ts, true);
 
 #endif
 
+/* --------------------- Double Reset to start OTA via WiFi ------------------ */
+#if defined(ESP32)
+#define USE_SPIFFS false
+#define ESP_DRD_USE_EEPROM true
+#define ESP_DRD_USE_LITTLEFS false
+#else
+#error This code is intended to run on the ESP32 platform! Please check your Tools->Board setting.
+#endif
+
+#define DRD_TIMEOUT 5
+#define DRD_ADDRESS 0
+#include <ESP_DoubleResetDetector.h> //https://github.com/khoih-prog/ESP_DoubleResetDetector
+DoubleResetDetector *drd;
+
+// for OTA via TCP/IP
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+const char *password = "123456789";
+#define OTA_TIMEOUT 120
+
 /* ---------------------  Setup Loop  ------------------ */
 void setup()
 {
@@ -315,6 +339,88 @@ void setup()
   // Generate device name based on mac address
   char ble_device_id[12];
   sprintf(ble_device_id, "%s-%04X", BLE_DEVICE_ID_PREFIX, chip);
+
+  // Detect if a double reset was used to start OTA updates
+  // Display reason for last restart
+  esp_reset_reason_t last_reset_reason;
+  last_reset_reason = esp_reset_reason();
+  // enter_reconfig only if there was a valid reason
+  bool enter_reconfig = false;
+  switch (last_reset_reason)
+  {
+  case ESP_RST_UNKNOWN:
+    log_w("Restarted because ESP_RST_UNKNOWN");
+    break;
+  case ESP_RST_POWERON:
+    log_i("Restarted because ESP_RST_POWERON");
+    break;
+  case ESP_RST_SW:
+    log_i("Restarted because ESP_RST_SW");
+    enter_reconfig = true;
+    break;
+  case ESP_RST_PANIC:
+    log_e("Restarted because ESP_RST_PANIC");
+    break;
+  case ESP_RST_INT_WDT:
+    enter_reconfig = true;
+    log_w("Restarted because ESP_RST_INT_WDT");
+    break;
+  case ESP_RST_TASK_WDT:
+    enter_reconfig = true;
+    log_w("Restarted because ESP_RST_TASK_WDT");
+    break;
+  case ESP_RST_WDT:
+    enter_reconfig = true;
+    log_w("Restarted because ESP_RST_WDT");
+    break;
+  case ESP_RST_DEEPSLEEP:
+    log_i("Restarted because ESP_RST_DEEPSLEEP");
+    break;
+  case ESP_RST_BROWNOUT:
+    log_w("Restarted because ESP_RST_BROWNOUT");
+    delay(500);
+    break;
+  case ESP_RST_SDIO:
+    log_i("Restarted because ESP_RST_SDIO");
+    break;
+  default:
+    log_e("Restarted because <unclassified reason>");
+    break;
+  }
+
+  drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
+  if (drd->detectDoubleReset() && enter_reconfig)
+  {
+    log_i("Double Reset detected -> starting OTA mode");
+    WiFi.softAP(ble_device_id, password);
+    ArduinoOTA.setHostname(BLE_DEVICE_ID_PREFIX);
+    ArduinoOTA.begin();
+    unsigned long start = millis();
+
+    // fading led to suggest status
+    // Fade the activity led to suggest something is not right
+    const int freq = 5000;
+    const int ledChannel = 0;
+    const int resolution = 8;
+    ledcSetup(ledChannel, freq, resolution);
+    ledcAttachPin(LED_STATUS, ledChannel);
+    unsigned int dutyCycle = 0;
+
+    // Wait OTA_TIMEOUT seconds, then restart
+    while (millis() - start < (OTA_TIMEOUT * 1000))
+    {
+      ArduinoOTA.handle();
+      drd->loop();
+      ledcWrite(ledChannel, dutyCycle++);
+      delay(2);
+      if (dutyCycle > 255)
+      {
+        dutyCycle = 0;
+      }
+    }
+    ESP.restart();
+  }
+  delay(1000);
 
   // Create the BLE Device
   NimBLEDevice::init(ble_device_id);
@@ -419,6 +525,7 @@ void setup()
 void loop()
 {
   ts.execute();
+  drd->loop();
 }
 
 /* end of file */
