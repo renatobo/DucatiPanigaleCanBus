@@ -2,9 +2,11 @@
 
 - [What is DucatiPanigaleCanBus?](#what-is-ducatipanigalecanbus)
 - [Setup of Harry Lap Timer](#setup-of-harry-lap-timer)
-- [Hardware](#hardware)
-- [Schematics](#schematics)
 - [Building the software in Platform IO and Arduino IDE](#building-the-software-in-platform-io-and-arduino-ide)
+  - [OTA updates with DoubleResetDetector](#ota-updates-with-doubleresetdetector)
+- [Schematics](#schematics)
+- [Hardware](#hardware)
+  - [An example of a compact unit](#an-example-of-a-compact-unit)
 - [Credits](#credits)
 
 ## What is DucatiPanigaleCanBus?
@@ -30,24 +32,24 @@ There is no further configuration required on HTL: once the script is available 
 ![Sensor info](docs/sensor_info.png)
 ![Sensor live data](docs/sensor_data.png)
 
-## Hardware
+## Building the software in Platform IO and Arduino IDE
 
-Parts: Ux refers to the schematic reported below. Links to sources are examples, these are very generic componebts.
+This project is best handled with Platform.io. Nonetheless, it uses the Arduino framework so you can use the Arduino IDE as well.
 
-- U1: A generic ESP32
-- U2: [A CANBUS transceiver, such as one based on SN65HVD230](https://www.amazon.com/gp/product/B07ZT7LLSK). Be careful to source a genuine part
-- U3: [Buck converter 12V to 5V](https://www.amazon.com/gp/product/B076P4C42B) to power ESP32 from the CANBUS directly
-- U4: [4 PINs adapter for Ducati DDA port (male)](https://www.aliexpress.com/item/4001007307044.html)
+Steps required to compile this in the Arduino IDE
 
-Misc parts from your HW bin
+- copy content of `src` and `include` into your sketch folder
+- perform a `git clone https://github.com/timurrrr/arduino-CAN` in the sketch folder, or copy a zip file from github directly
+- move the content of `arduino-CAN/src` in the main folder of your sketch
 
-- U5: small switch (to cut power when not needed) inline with the Input power
-- heat shrink tube to protect the cable from the 4 PINs adapter
+### OTA updates with DoubleResetDetector
 
-![U2](docs/U2_transceiver.jpeg)
-![U3](docs/U3_buck_adapter.jpeg)
-![U4](docs/U4_4pin_adapter.jpeg)
-![U5](docs/U5_switch_small.jpeg)
+When the unit is tucked away, updates via USB are inconvenient. The "Double Reset Detector" library will be triggered after a double "reset" activity within 5 seconds (configurable), with these series of actions
+
+- start WiFi in Access Point mode
+- start OTA in listening mode
+
+The AP name is based on the `DEVICE_ID`  macro, and it includes the 4 digits identifying the unit. At that point, mDNS starts and after connecting to the ESP32 Access Point you can upload the `ducan.local` device.
 
 ## Schematics
 
@@ -72,15 +74,34 @@ Since you can use any pin for TWAI, there are 2 options
 - use predefined options in [include/canbusble_pinout.h](include/canbusble_pinout.h)
 - define via compile time definitions of `TX_GPIO_NUM` and `RX_GPIO_NUM`
 
-## Building the software in Platform IO and Arduino IDE
+## Hardware
 
-This project is best handled with Platform.io. Nonetheless, it uses the Arduino framework so you can use the Arduino IDE as well.
+Parts: Ux refers to the schematic reported above. Links to sources are examples, these are very generic componebts.
 
-Steps required to compile this in the Arduino IDE
+- U1: A generic ESP32
+- U2: [A CANBUS transceiver, such as one based on SN65HVD230](https://www.amazon.com/gp/product/B07ZT7LLSK). Be careful to source a genuine part
+- U3: [Buck converter 12V to 5V](https://www.amazon.com/gp/product/B076P4C42B) to power ESP32 from the CANBUS directly
+- U4: [4 PINs adapter for Ducati DDA port (male)](https://www.aliexpress.com/item/4001007307044.html)
 
-- copy content of `src` and `include` into your sketch folder
-- perform a `git clone https://github.com/timurrrr/arduino-CAN` in the sketch folder, or copy a zip file from github directly
-- move the content of `arduino-CAN/src` in the main folder of your sketch
+Misc parts from your HW bin
+
+- U5: small switch (to cut power when not needed) inline with the Input power
+- heat shrink tube to protect the cable from the 4 PINs adapter
+
+![U2](docs/U2_transceiver.jpeg)
+![U3](docs/U3_buck_adapter.jpeg)
+![U4](docs/U4_4pin_adapter.jpeg)
+![U5](docs/U5_switch_small.jpeg)
+
+### An example of a compact unit
+
+The smallest esp32 readily available is the D1 mini ESP32: fitting everything in a box that can go in the tail section of the Panigale has been tediously meticolous, but the result works: the box is 3d printed, [here the source files](docs/DuCanBus.f3d) of which you should print *box* and *lid*. You will need a few M1.7 screws 4 to 5 mm long, and a lot of patience - hot glue holds pieces together in a firm location, to avoid issues with vibrations.
+
+![open](docs/d1mini32_open.jpg)
+
+Once closed
+
+![closed](docs/d1mini32_closed.jpg)
 
 ## Credits
 
