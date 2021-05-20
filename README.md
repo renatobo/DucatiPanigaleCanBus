@@ -2,11 +2,13 @@
 
 - [What is DucatiPanigaleCanBus?](#what-is-ducatipanigalecanbus)
 - [Setup of Harry Lap Timer](#setup-of-harry-lap-timer)
+  - [aud](#aud)
 - [Building the software in Platform IO and Arduino IDE](#building-the-software-in-platform-io-and-arduino-ide)
   - [OTA updates with DoubleResetDetector](#ota-updates-with-doubleresetdetector)
 - [Schematics](#schematics)
 - [Hardware](#hardware)
-  - [An example of a compact unit](#an-example-of-a-compact-unit)
+  - [An example based on common DevKit ESP32 module](#an-example-based-on-common-devkit-esp32-module)
+  - [An example of a compact unit based on Wemos D1mini 32](#an-example-of-a-compact-unit-based-on-wemos-d1mini-32)
 - [Credits](#credits)
 
 ## What is DucatiPanigaleCanBus?
@@ -28,9 +30,25 @@ At this time, the script running on Harry Lap Timer needs to be made available w
 
 There is no further configuration required on HTL: once the script is available and your ESP32 flash and connected, HLT will discover the device (based on the device ID naming convention, the BLE Service, and the Characteristics IDs defined in the ESP32 code and in the LUA script)
 
+When asked for a PIN, use `123456`
+
 ![Device found](docs/sensor_found.png)
 ![Sensor info](docs/sensor_info.png)
 ![Sensor live data](docs/sensor_data.png)
+
+### aud
+
+HLT will connect to any nearby device matching a name of "DuCan-...." where the 4 dots match an id unique to your device.
+
+If you need to deterministically connect to a specific device
+
+- Open Administration
+- go to Settings
+- scroll down to Expert Settings
+- scroll down to Custom BTLE ODB Adapter
+- in 'Peripheral Name' add the full name of your device, e.g. DuCan-#499 or DuCan-8409. You can once again use a single `.` to specify 'any character
+
+![Expert Settings > Custom peripheral name](docs/config_customperipheral_name.png)
 
 ## Building the software in Platform IO and Arduino IDE
 
@@ -76,7 +94,7 @@ Since you can use any pin for TWAI, there are 2 options
 
 ## Hardware
 
-Parts: U<x> refers to the schematic reported above. Links to sources are examples, these are very generic components.
+Parts: `U<x>` refers to the schematic reported above. Links to sources are examples, these are very generic components.
 
 - U1: A generic ESP32
 - U2: [A CANBUS transceiver, such as one based on SN65HVD230](https://www.amazon.com/gp/product/B07ZT7LLSK). Be careful to source a genuine part
@@ -93,9 +111,21 @@ Misc parts from your HW bin
 ![U4](docs/U4_4pin_adapter.jpeg)
 ![U5](docs/U5_switch_small.jpeg)
 
-### An example of a compact unit
+### An example based on common DevKit ESP32 module
 
-The smallest esp32 readily available is the D1 mini ESP32: fitting everything in a box that can go in the tail section of the Panigale has been tediously meticolous, but the result works: the box is 3d printed, [here the source files](docs/DuCanBus.f3d) of which you should print *box* and *lid*. You will need a few M1.7 screws 4 to 5 mm long, and a lot of patience - hot glue holds pieces together in a firm location, to avoid issues with vibrations.
+The most common ESP32 is the DevKit: the box is 3d printed, [here the source files for DevKit](docs/DuCanBus_DevKit.f3d) of which you should print *box* and *lid*. You will need 4 M1.7 screws 4 to 6 mm long, and a lot of patience:
+
+- hot glue to hold pieces together in a firm location, to avoid issues with vibrations, is recommended
+- the transceiver is designed to be locked in position by the two columns: you can melt some plastic to ensure it does not move around
+
+![open](docs/doit_open.jpg)
+
+### An example of a compact unit based on Wemos D1mini 32
+
+The smallest esp32 readily available is the D1 mini ESP32: fitting everything in a box that can go in the tail section of the Panigale has been tediously meticolous, but the result works: the box is 3d printed, [here the source files for D1 Mini](docs/DuCanBus.f3d) of which you should print *box* and *lid*. You will need a few M1.7 screws 4 to 5 mm long, and a lot of patience:
+
+- hot glue to hold pieces together in a firm location, to avoid issues with vibrations, is recommended
+- the transceiver is designed to be locked in position by the two columns: you can melt some plastic to ensure it does not move around
 
 ![open](docs/d1mini32_open.jpg)
 
