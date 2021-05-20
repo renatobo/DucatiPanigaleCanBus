@@ -7,6 +7,7 @@
     -- local blecharacteristicstatic = "6E400010-59f2-4a41-9acd-cd56fb435d64"
     local blecharacteristicslow = "6E400011-59f2-4a41-9acd-cd56fb435d64"
     local blecharacteristicfast = "6E400012-59f2-4a41-9acd-cd56fb435d64"
+	local blecharacteristicwrite = "6E400012-59f2-4a41-9acd-cd56fb435000"
     
 	--	sensor.oninit() is mandatory to define for any sensor purpose
     --	it sets basic parameters and sets up communication
@@ -16,13 +17,23 @@
         
         --	set sensor parameters
 		sensor.channelsets = { engine } 
-		sensor.nameprefix = sensorname -- shown in Sensor List
+		
 		sensor.normupdaterate = 20 -- this is the expected update rate, used to generate warnings
 		sensor.connectiontype = btle -- one of btle, bt, wifi, mfi
         
         --	set BTLE peripheral name pattern and service / characteristics we are interested in
-		sensor.btle.peripheralnamepattern = sensordevicepattern -- regular expression, dot means any character
-        
+		-- if Expert settings contain an override, use it - otherwise the default of this module is in sensordevicepattern
+		local customsensordevicepattern = preferences.getstring("kCustomOBDBTLEPeripheral")
+		-- regular expression, dot means any character. Taken from Expert settings
+		
+		if string.len(customsensordevicepattern) > 0 then
+			sensor.btle.peripheralnamepattern = customsensordevicepattern
+			sensor.nameprefix = customsensordevicepattern -- shown in Sensor List
+		else
+			sensor.btle.peripheralnamepattern = sensordevicepattern
+			sensor.nameprefix = sensorname -- shown in Sensor List
+		end
+
         --  set our read charactersitics, we will use the tag returned later
         -- not impletemented as it requires writing on bus - VIN
         -- no notification needed
@@ -31,14 +42,34 @@
         readcharacteristicfast =   sensor.btle.addcharacteristic(bleservice, blecharacteristicfast,    true)
         -- enginetemperature, ambienttemperature, battery
         readcharacteristicslow =   sensor.btle.addcharacteristic(bleservice, blecharacteristicslow,    true)
+		-- for write to configurations (used right now to restart the unit)
+		writecharacteristicrestart = sensor.btle.addcharacteristic(bleservice, blecharacteristicwrite, false)
         
-		-- do not fetch additional info from service such as battery or firmware
-		sensor.btle.deviceinformation = false
+		-- fetch additional info from service such as battery or firmware
+		sensor.btle.deviceinformation = true
         
         --	Engine channel specific settings
 		sensor.engine.elm327 = false -- this is an important one: setting it to true will use predefined parsing
 		sensor.engine.obdonly = false -- qualifies to support more than ODBII / needed?
 		----tracereturn(connect, "sensor.oninit()")
+
+		sensor.configurationdefinitions =
+		{
+			reboot = { label = "Restart", type = "boolean", default = false }
+		}
+
+	end
+
+	function sensor.onconfigurationschanged()
+
+		if sensor.configurations.reboot then
+			sensor.btle.writevalue(writecharacteristicrestart, "1")
+			trace(adhoc, "Reconfig set sensor.btle.onconfigurationschanged")
+		else
+			-- since there are no other cases, throw an error
+			trace(adhoc, "FAILED Reconfig, we should not be here")
+		end
+
 	end
 
 	--  sensor.onconnect () is optional and called by the framework once the sensor
@@ -62,6 +93,9 @@
         
         -- read static characteristic, once
         -- sensor.btle.readvalue(readcharacteristicstatic)
+
+		-- reset the reboot flag
+		sensor.changeconfigurations({ reboot = false})
         
 	end
 

@@ -15,7 +15,7 @@ cat << EOF > $output
 	xsi:schemaLocation="http://www.gps-laptimer.de Scripts.xsd">
 
 	<author>Renato Bonomini</author>
-	<version>0.2</version>
+	<version>0.3</version>
 	<purpose>sensor.btle</purpose>
 	<replacing>false</replacing>
 	<script><![CDATA[
