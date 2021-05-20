@@ -23,6 +23,9 @@
 // Name used as prefix or name for BLE, WiFi, OTA hostname
 #define DEVICE_ID "DuCan"
 
+// Define the PIN requested by Bluetooth Pairing for bonding
+#define BLE_SECURITY_PASS 123456
+
 // Scheduler for periodic tasks, from arkhipenko/TaskScheduler
 #include <TaskScheduler.h>
 Scheduler ts;
@@ -96,11 +99,13 @@ void status_led_flip()
 #define BLE_ENGINEDATA_SERVICE_UUID "6E400001-59f2-4a41-9acd-cd56fb435d64"
 #define BLE_SLOW_ENGINEDATA_CHARACTERISTIC_UUID "6E400011-59f2-4a41-9acd-cd56fb435d64"
 #define BLE_FAST_ENGINEDATA_CHARACTERISTIC_UUID "6E400012-59f2-4a41-9acd-cd56fb435d64"
+#define BLE_REBOOT_CHARACTERISTIC_UUID "6E400012-59f2-4a41-9acd-cd56fb435000"
 #define BLE_DEVICE_ID_PREFIX DEVICE_ID
 
 static NimBLEServer *pServer;
 NimBLECharacteristic *pFastCharacteristic = NULL;
 NimBLECharacteristic *pSlowCharacteristic = NULL;
+NimBLECharacteristic *pRebootCharacteristic = NULL;
 bool BLEdeviceConnected = false;
 
 // notify a fast frequency message
@@ -213,6 +218,17 @@ class MyCharacteristicCallbacks : public NimBLECharacteristicCallbacks
     tNotify_fast.enable();
     tNotify_slow.enable();
   };
+
+  void onWrite(NimBLECharacteristic *pCharacteristic,ble_gap_conn_desc * 	desc ) {
+    log_i("Characteristic %s, written value: %d",pCharacteristic->getUUID().toString().c_str(), pCharacteristic->getValue().c_str());
+    if (pCharacteristic->getUUID() == pRebootCharacteristic->getUUID())
+    {
+      log_e("reboot");
+      //TODO: this should be handled gently, not simply stop and reboot 
+      NimBLEDevice::getServer()->disconnect(desc->conn_handle);
+      ESP.restart();
+    }
+  };
 };
 static MyCharacteristicCallbacks chrCallbacks;
 
@@ -269,6 +285,15 @@ bool to_hex(char *dest, size_t dest_len, const uint8_t *values, size_t val_len)
 }
 #endif
 
+uint8_t nodata_watchdog=0;
+// amount in seconds to wait until a restart happens if no data is seen on the bus
+// use a longer period if LAZYWATCHDOG defined
+#ifndef LAZYWATCHDOG 
+#define NODATA_WATCHDOG_TIMER (uint8_t) 10
+#else 
+#define NODATA_WATCHDOG_TIMER (uint8_t) 120
+#endif
+
 void report_msg_counters()
 {
 #if (CORE_DEBUG_LEVEL > 0)
@@ -284,6 +309,11 @@ void report_msg_counters()
         slowmessagehex, fastmessagehex);
 #endif
   status_led_flip();
+  if (counter_18+counter_80+counter_100 == 0 && nodata_watchdog++>NODATA_WATCHDOG_TIMER) {
+    log_e("no data observed - watchdog 'no data' rebooting device");
+    // TODO: the BLE connection should be handled gently, not simply stop and reboot 
+    ESP.restart();
+  }
 }
 Task tReport(1000, -1, &report_msg_counters, &ts, true);
 
@@ -305,6 +335,9 @@ void handle_dm_increase()
   message_slow.battery = 120 + base_counter * (140 - 120) / base_cycles;
   if (base_counter++ > base_cycles)
     base_counter = 0;
+  counter_18++;
+  counter_80++;
+  counter_100++;
 }
 Task tIncreaseDM(100, -1, &handle_dm_increase, &ts, true);
 
@@ -429,12 +462,13 @@ void setup()
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);                             /** +9db */
   NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_ADV);       /** +9db */
   NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_CONN_HDL0); /** +9db */
-  NimBLEDevice::setSecurityIOCap((uint8_t)BLE_HS_IO_NO_INPUT_OUTPUT);
   // NimBLEDevice::setMTU(185);
-  // ESP_LE_AUTH_NO_BOND
-  NimBLEDevice::setSecurityAuth(false, false, false);
+  // Adding bonding, so that we avoid picking up sensors from other nearby bikes unknownigly
+  NimBLEDevice::setSecurityAuth(true, true, true);
   // NimBLEDevice::setSecurityAuth(/*BLE_SM_PAIR_AUTHREQ_BOND | BLE_SM_PAIR_AUTHREQ_MITM |*/ (uint8_t)BLE_SM_PAIR_AUTHREQ_SC);
-
+  NimBLEDevice::setSecurityPasskey(BLE_SECURITY_PASS);
+  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
+  
   // Create the BLE Server
   pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -444,12 +478,16 @@ void setup()
   NimBLEService *pService = pServer->createService(BLE_ENGINEDATA_SERVICE_UUID);
 
   // Create a BLE Characteristic - fast frequency messages
-  pFastCharacteristic = pService->createCharacteristic(BLE_FAST_ENGINEDATA_CHARACTERISTIC_UUID, NIMBLE_PROPERTY::NOTIFY);
+  pFastCharacteristic = pService->createCharacteristic(BLE_FAST_ENGINEDATA_CHARACTERISTIC_UUID,  NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::NOTIFY);
   pFastCharacteristic->setCallbacks(&chrCallbacks);
 
   // Create a BLE Characteristic - slow frequency messages
-  pSlowCharacteristic = pService->createCharacteristic(BLE_SLOW_ENGINEDATA_CHARACTERISTIC_UUID, NIMBLE_PROPERTY::NOTIFY);
+  pSlowCharacteristic = pService->createCharacteristic(BLE_SLOW_ENGINEDATA_CHARACTERISTIC_UUID,  NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::NOTIFY);
   pSlowCharacteristic->setCallbacks(&chrCallbacks);
+
+    // Create a BLE Characteristic - write a true value to reboot the component
+  pRebootCharacteristic = pService->createCharacteristic(BLE_REBOOT_CHARACTERISTIC_UUID, NIMBLE_PROPERTY::WRITE_NR);
+  pRebootCharacteristic->setCallbacks(&chrCallbacks);
 
   // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
 
