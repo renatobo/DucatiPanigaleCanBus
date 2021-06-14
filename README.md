@@ -31,14 +31,14 @@ Right now this is compatible only with BLE which is the preferred option if you 
 
 The choice of data is a combination of what could be useful and what is supported by HTL channels, right now:
 
-### Transmitted at 20Hz**
+### Transmitted at 20Hz
 
 - Wheel speed
 - Engine RPM
 - Gear
 - Throttle position
 
-### Transmitted at 1Hz**
+### Transmitted at 1Hz
 
 - Engine coolant temperature
 - Air temperature
