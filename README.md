@@ -2,8 +2,8 @@
 
 - [What is DucatiPanigaleCanBus?](#what-is-ducatipanigalecanbus)
 - [What data is collected?](#what-data-is-collected)
-  - [Transmitted at 20Hz**](#transmitted-at-20hz)
-  - [Transmitted at 1Hz**](#transmitted-at-1hz)
+  - [Transmitted at 20Hz](#transmitted-at-20hz)
+  - [Transmitted at 1Hz](#transmitted-at-1hz)
 - [Setup of Harry Lap Timer](#setup-of-harry-lap-timer)
   - [Connect to a specific unit](#connect-to-a-specific-unit)
 - [Building the software in Platform IO and Arduino IDE](#building-the-software-in-platform-io-and-arduino-ide)
