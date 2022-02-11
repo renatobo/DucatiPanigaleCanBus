@@ -29,7 +29,7 @@ Right now this is compatible only with BLE which is the preferred option if you 
 
 ## What data is collected?
 
-The choice of data is a combination of what could be useful and what is supported by HTL channels, right now:
+The choice of data is a combination of what could be useful and what is supported by HLT channels, right now:
 
 ### Transmitted at 20Hz
 
