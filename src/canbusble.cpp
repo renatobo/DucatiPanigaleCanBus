@@ -26,15 +26,21 @@
 // Define the PIN requested by Bluetooth Pairing for bonding
 #define BLE_SECURITY_PASS 123456
 
-// Scheduler for periodic tasks, from arkhipenko/TaskScheduler
-#include <TaskScheduler.h>
-Scheduler ts;
+// Fast update frequency
+#define FAST_MESSAGES_FREQUENCY_HZ 25
 
 // Troubleshooting options
 //
 // Define the macro CAN_DATA_SIMULATOR_MODE to generate linear looping values for counters instead of reading from CANBUS
 // The better option is to use a compile time define (see platformio.ini for an example)
 // #define CAN_DATA_SIMULATOR_MODE
+
+// Define this macro to enable the ability to perform OTA upgrades after a double reset
+// #define ENABLE_OTA_WITH_DRD
+
+// Scheduler for periodic tasks, from arkhipenko/TaskScheduler
+#include <TaskScheduler.h>
+Scheduler ts;
 
 /* ----------- CANBUS definitions ------------- */
 #include "CAN.h"
@@ -52,7 +58,7 @@ uint32_t counter_80;
 uint32_t counter_100;
 
 // Structure to hold "fast frequency" messages type 1 (rpm, wheelspeed, tps, gear)
-#define BLE_FASTTASK_INTERVAL 50
+#define BLE_FASTTASK_INTERVAL 1000/FAST_MESSAGES_FREQUENCY_HZ 
 #define CANBUS_FASTMSG_TYPE 1
 #define CANBUS_MSGTYPE1_SIZE 7
 #define CANBUS_FAST_SIZE CANBUS_MSGTYPE1_SIZE
@@ -344,10 +350,12 @@ Task tIncreaseDM(100, -1, &handle_dm_increase, &ts, true);
 #endif
 
 /* --------------------- Double Reset to start OTA via WiFi ------------------ */
+#if defined(ENABLE_OTA_WITH_DRD)
 #if defined(ESP32)
-#define USE_SPIFFS false
-#define ESP_DRD_USE_EEPROM true
-#define ESP_DRD_USE_LITTLEFS false
+// #define USE_SPIFFS true
+// #define ESP_DRD_USE_EEPROM true
+// #define ESP_DRD_USE_LITTLEFS false
+// #define ESP_DRD_USE_SPIFFS false
 #else
 #error This code is intended to run on the ESP32 platform! Please check your Tools->Board setting.
 #endif
@@ -363,6 +371,7 @@ DoubleResetDetector *drd;
 #include <ArduinoOTA.h>
 const char *password = "123456789";
 #define OTA_TIMEOUT 120
+#endif // #if defined(ENABLE_OTA_WITH_DRD)
 
 /* ---------------------  Setup Loop  ------------------ */
 void setup()
@@ -421,6 +430,7 @@ void setup()
     break;
   }
 
+  #if defined(ENABLE_OTA_WITH_DRD)
   drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
   if (drd->detectDoubleReset() && enter_reconfig)
   {
@@ -454,6 +464,7 @@ void setup()
     ESP.restart();
   }
   delay(1000);
+  #endif // #if defined(ENABLE_OTA_WITH_DRD)
 
   // Create the BLE Device
   NimBLEDevice::init(ble_device_id);
@@ -563,7 +574,9 @@ void setup()
 void loop()
 {
   ts.execute();
+  #if defined(ENABLE_OTA_WITH_DRD)
   drd->loop();
+  #endif // #if defined(ENABLE_OTA_WITH_DRD)
 }
 
 /* end of file */

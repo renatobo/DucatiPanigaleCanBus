@@ -1,18 +1,19 @@
 # DucatiPanigaleCanBus
 
-- [What is DucatiPanigaleCanBus?](#what-is-ducatipanigalecanbus)
-- [What data is collected?](#what-data-is-collected)
-  - [Transmitted at 20Hz](#transmitted-at-20hz)
-  - [Transmitted at 1Hz](#transmitted-at-1hz)
-- [Setup of Harry Lap Timer](#setup-of-harry-lap-timer)
-  - [Connect to a specific unit](#connect-to-a-specific-unit)
-- [Building the software in Platform IO and Arduino IDE](#building-the-software-in-platform-io-and-arduino-ide)
-  - [OTA updates with DoubleResetDetector](#ota-updates-with-doubleresetdetector)
-- [Schematics](#schematics)
-- [Hardware](#hardware)
-  - [An example based on common DevKit ESP32 module](#an-example-based-on-common-devkit-esp32-module)
-  - [An example of a compact unit based on Wemos D1mini 32](#an-example-of-a-compact-unit-based-on-wemos-d1mini-32)
-- [Credits](#credits)
+- [DucatiPanigaleCanBus](#ducatipanigalecanbus)
+  - [What is DucatiPanigaleCanBus?](#what-is-ducatipanigalecanbus)
+  - [What data is collected?](#what-data-is-collected)
+    - [Transmitted at 20Hz or 25Hz](#transmitted-at-20hz-or-25hz)
+    - [Transmitted at 1Hz](#transmitted-at-1hz)
+  - [Setup of Harry Lap Timer](#setup-of-harry-lap-timer)
+    - [Connect to a specific unit](#connect-to-a-specific-unit)
+  - [Building the software in Platform IO and Arduino IDE](#building-the-software-in-platform-io-and-arduino-ide)
+    - [OTA updates with DoubleResetDetector](#ota-updates-with-doubleresetdetector)
+  - [Schematics](#schematics)
+  - [Hardware](#hardware)
+    - [An example based on common DevKit ESP32 module](#an-example-based-on-common-devkit-esp32-module)
+    - [An example of a compact unit based on Wemos D1mini 32](#an-example-of-a-compact-unit-based-on-wemos-d1mini-32)
+  - [Credits](#credits)
 
 ## What is DucatiPanigaleCanBus?
 
@@ -31,7 +32,7 @@ Right now this is compatible only with BLE which is the preferred option if you 
 
 The choice of data is a combination of what could be useful and what is supported by HLT channels, right now:
 
-### Transmitted at 20Hz
+### Transmitted at 20Hz or 25Hz
 
 - Wheel speed
 - Engine RPM
@@ -56,7 +57,7 @@ As of Jun 2021, Gear collected from the engine is not exported by HLT even if co
 
 At this time, the script running on Harry Lap Timer needs to be made available with instructions [that are described in the HLT developer forum](http://forum.gps-laptimer.de/index.php).
 
-There is no further configuration required on HTL: once the script is available and your ESP32 flash and connected, HLT will discover the device (based on the device ID naming convention, the BLE Service, and the Characteristics IDs defined in the ESP32 code and in the LUA script)
+There is no further configuration required on HLT: once the script is available and your ESP32 flash and connected, HLT will discover the device (based on the device ID naming convention, the BLE Service, and the Characteristics IDs defined in the ESP32 code and in the LUA script)
 
 When asked for a PIN, use `123456`
 
@@ -98,6 +99,8 @@ When the unit is tucked away, updates via USB are inconvenient. The "Double Rese
 - start OTA in listening mode
 
 The AP name is based on the `DEVICE_ID`  macro, and it includes the 4 digits identifying the unit. At that point, mDNS starts and after connecting to the ESP32 Access Point you can upload to the `ducan.local` device.
+
+To activate the OTA functionality, define the compiler marco `DRD_OTA`.
 
 ## Schematics
 
