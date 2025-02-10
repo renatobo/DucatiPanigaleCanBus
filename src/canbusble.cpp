@@ -38,6 +38,10 @@
 // Define this macro to enable the ability to perform OTA upgrades after a double reset
 // #define ENABLE_OTA_WITH_DRD
 
+#define WIFI_PWD "123456789"  // password for OTA Access Point via WiFi
+#define OTA_TIMEOUT 300   // 5 minutes to wait for OTA before restarting
+#define DRD_TIMEOUT 3   // 5 seconds to wait for a double reset to start OTA
+
 // Scheduler for periodic tasks, from arkhipenko/TaskScheduler
 #include <TaskScheduler.h>
 Scheduler ts;
@@ -146,7 +150,7 @@ void handle_ble_notify_msg_slow()
 Task tNotify_slow(BLE_SLOWTASK_INTERVAL, -1, &handle_ble_notify_msg_slow, &ts, false);
 
 // BLE CallBacks
-class MyServerCallbacks : public NimBLEServerCallbacks
+class ServerCallbacks : public NimBLEServerCallbacks
 {
   void onConnect(NimBLEServer *pServer)
   {
@@ -155,32 +159,32 @@ class MyServerCallbacks : public NimBLEServerCallbacks
     // NimBLEDevice::startAdvertising();
   };
 
-  void onConnect(NimBLEServer *pServer, ble_gap_conn_desc *desc)
+  void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override
   {
     BLEdeviceConnected = true;
-    log_i("Client address: %s", NimBLEAddress(desc->peer_ota_addr).toString().c_str());
+    log_i("Client address: %s", connInfo.getAddress().toString().c_str());
     // NimBLEDevice::stopAdvertising();
   }
 
-  void onDisconnect(NimBLEServer *pServer)
+  void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override
   {
     BLEdeviceConnected = false;
     tNotify_fast.disable();
     tNotify_slow.disable();
     log_i("Client disconnected - start advertising");
-    // NimBLEDevice::startAdvertising();
+    NimBLEDevice::startAdvertising();
   }
-};
-class MyCharacteristicCallbacks : public NimBLECharacteristicCallbacks
+} serverCallbacks;
+class CharacteristicCallbacks : public NimBLECharacteristicCallbacks 
 {
-  void onSubscribe(NimBLECharacteristic *pCharacteristic, ble_gap_conn_desc *desc, uint16_t subValue)
+  void onSubscribe(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo, uint16_t subValue) override 
   {
 #if (CORE_DEBUG_LEVEL > 0)
     // Be verbose on client subscription activity when debug level is not null
     String logmessage = "Client ID: ";
-    logmessage += desc->conn_handle;
+    logmessage += connInfo.getConnHandle();
     logmessage += " Address: ";
-    logmessage += std::string(NimBLEAddress(desc->peer_ota_addr)).c_str();
+    logmessage += connInfo.getAddress().toString().c_str();
     if (subValue == 0)
     {
       logmessage += " Unsubscribed to ";
@@ -235,8 +239,7 @@ class MyCharacteristicCallbacks : public NimBLECharacteristicCallbacks
       ESP.restart();
     }
   };
-};
-static MyCharacteristicCallbacks chrCallbacks;
+} chrCallbacks;
 
 /* --------------------- CanBus Functions ------------------ */
 #if !defined(CAN_DATA_SIMULATOR_MODE)
@@ -353,14 +356,14 @@ Task tIncreaseDM(100, -1, &handle_dm_increase, &ts, true);
 #if defined(ENABLE_OTA_WITH_DRD)
 #if defined(ESP32)
 // #define USE_SPIFFS true
-// #define ESP_DRD_USE_EEPROM true
-// #define ESP_DRD_USE_LITTLEFS false
-// #define ESP_DRD_USE_SPIFFS false
+#define ESP_DRD_USE_EEPROM true
+#define ESP_DRD_USE_LITTLEFS false
+#define ESP_DRD_USE_SPIFFS false
+#define DOUBLERESETDETECTOR_DEBUG true 
 #else
 #error This code is intended to run on the ESP32 platform! Please check your Tools->Board setting.
 #endif
 
-#define DRD_TIMEOUT 5
 #define DRD_ADDRESS 0
 #include <ESP_DoubleResetDetector.h> //https://github.com/khoih-prog/ESP_DoubleResetDetector
 DoubleResetDetector *drd;
@@ -369,8 +372,7 @@ DoubleResetDetector *drd;
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
-const char *password = "123456789";
-#define OTA_TIMEOUT 120
+const char *password = WIFI_PWD;
 #endif // #if defined(ENABLE_OTA_WITH_DRD)
 
 /* ---------------------  Setup Loop  ------------------ */
@@ -395,10 +397,10 @@ void setup()
     break;
   case ESP_RST_POWERON:
     log_i("Restarted because ESP_RST_POWERON");
+    enter_reconfig = true;
     break;
   case ESP_RST_SW:
     log_i("Restarted because ESP_RST_SW");
-    enter_reconfig = true;
     break;
   case ESP_RST_PANIC:
     log_e("Restarted because ESP_RST_PANIC");
@@ -470,9 +472,9 @@ void setup()
   NimBLEDevice::init(ble_device_id);
   // NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
   // Optional: set the transmit power, default is 3db
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9);                             /** +9db */
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_ADV);       /** +9db */
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_CONN_HDL0); /** +9db */
+  NimBLEDevice::setPower(9);                             /** +9db */
+  // NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_ADV);       /** +9db */
+  // NimBLEDevice::setPower(ESP_PWR_LVL_P9, ESP_BLE_PWR_TYPE_CONN_HDL0); /** +9db */
   // NimBLEDevice::setMTU(185);
   // Adding bonding, so that we avoid picking up sensors from other nearby bikes unknownigly
   NimBLEDevice::setSecurityAuth(true, true, true);
@@ -482,7 +484,7 @@ void setup()
   
   // Create the BLE Server
   pServer = NimBLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
+  pServer->setCallbacks(&serverCallbacks);
   pServer->advertiseOnDisconnect(true);
 
   // Create the BLE Service
@@ -511,7 +513,7 @@ void setup()
   // TODO appearance: 1344-18 = 1362 sensor - multisensor https://specificationrefs.bluetooth.com/assigned-values/Appearance%20Values.pdf
   pAdvertising->setAppearance(1344); // this might crash esp32 ble stack
   pAdvertising->addServiceUUID(pService->getUUID());
-  pAdvertising->setScanResponse(true);
+  pAdvertising->enableScanResponse(true);
   // pAdvertising->setScanResponse(false);
   // pAdvertising->setMinPreferred(0x06); // functions that help with iPhone connections issue -> find out more at https://github.com/h2zero/NimBLE-Arduino/issues/129
   // pAdvertising->setMinPreferred(0x0);  // set value to 0x00 to not advertise this parameter

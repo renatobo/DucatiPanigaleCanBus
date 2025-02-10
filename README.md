@@ -8,6 +8,7 @@
   - [Setup of Harry Lap Timer](#setup-of-harry-lap-timer)
     - [Connect to a specific unit](#connect-to-a-specific-unit)
   - [Building the software in Platform IO and Arduino IDE](#building-the-software-in-platform-io-and-arduino-ide)
+    - [Simulating CANbus values to troubleshoot BLE](#simulating-canbus-values-to-troubleshoot-ble)
     - [OTA updates with DoubleResetDetector](#ota-updates-with-doubleresetdetector)
   - [Schematics](#schematics)
   - [Hardware](#hardware)
@@ -39,6 +40,8 @@ The choice of data is a combination of what could be useful and what is supporte
 - Gear
 - Throttle position
 
+Define the frequency with the macro `FAST_MESSAGES_FREQUENCY_HZ`
+
 ### Transmitted at 1Hz
 
 - Engine coolant temperature
@@ -59,7 +62,12 @@ At this time, the script running on Harry Lap Timer needs to be made available w
 
 There is no further configuration required on HLT: once the script is available and your ESP32 flash and connected, HLT will discover the device (based on the device ID naming convention, the BLE Service, and the Characteristics IDs defined in the ESP32 code and in the LUA script)
 
-When asked for a PIN, use `123456`
+To pair the device to your phone (so that other phones with the same setup don't randomly pick up your sensor), use the pairing code defined in `BLE_SECURITY_PASS`, e.g.
+
+```C
+// Define the PIN requested by Bluetooth Pairing for bonding
+#define BLE_SECURITY_PASS 123456
+```
 
 ![Device found](docs/sensor_found.png)
 ![Sensor info](docs/sensor_info.png)
@@ -75,7 +83,7 @@ If you need to connect to a specific device
 - go to Settings
 - scroll down to Expert Settings
 - scroll down to Custom BTLE ODB Adapter
-- in 'Peripheral Name' add the full name of your device, e.g. DuCan-#499 or DuCan-8409. You can once again use a single `.` to specify 'any character
+- in 'Peripheral Name' add the full name of your device, e.g. `DuCan-A499` or `DuCan-8409`. You can once again use a single `.` to specify *any character*
 
 ![Expert Settings > Custom peripheral name](docs/config_customperipheral_name.png)
 
@@ -91,6 +99,31 @@ Steps required to compile this in the Arduino IDE
 - perform a `git clone https://github.com/timurrrr/arduino-CAN` in the sketch folder, or copy a zip file from github directly
 - move the content of `arduino-CAN/src` in the main folder of your sketch
 
+### Simulating CANbus values to troubleshoot BLE
+
+Having the device connected to a running bike to generate data while troubleshooting BLE connectivity from the console log is quite inconvenient: you can enable a "data simulator" that will linearly increase data in a loop without a live CANbus connection.
+
+Define `CAN_DATA_SIMULATOR_MODE` or add it to the build command line (as in the example *doit_simulateCAN* environment).
+
+With logging enable, your serial will show
+
+```plaintext
+[   364][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 0, 80: 0, 100: 0], values RPM: 0, Speed: 0, APS: 0, Gear: 0, ETemp: 0, ATemp 0, Battery: 0. SLOW [00000000], FAST [00000000000000]
+[  1364][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 14, 80: 14, 100: 14], values RPM: 2140, Speed: 9, APS: 2, Gear: 1, ETemp: 70, ATemp 16, Battery: 120. SLOW [00000000], FAST [00000000000000]
+[  2364][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 24, 80: 24, 100: 24], values RPM: 2240, Speed: 12, APS: 3, Gear: 1, ETemp: 70, ATemp 16, Battery: 120. SLOW [00000000], FAST [00000000000000]
+[  3364][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 34, 80: 34, 100: 34], values RPM: 2340, Speed: 15, APS: 4, Gear: 1, ETemp: 71, ATemp 16, Battery: 120. SLOW [00000000], FAST [00000000000000]
+[  4364][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 44, 80: 44, 100: 44], values RPM: 2440, Speed: 17, APS: 5, Gear: 1, ETemp: 71, ATemp 17, Battery: 120. SLOW [00000000], FAST [00000000000000]
+```
+
+and with a BLE client attached
+
+```plaintext
+[312367][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 3124, 80: 3124, 100: 3124], values RPM: 3180, Speed: 39, APS: 12, Gear: 1, ETemp: 74, ATemp 18, Battery: 122. SLOW [024A127A], FAST [016C0C27000C01]
+[313367][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 3134, 80: 3134, 100: 3134], values RPM: 3280, Speed: 42, APS: 13, Gear: 1, ETemp: 75, ATemp 19, Battery: 122. SLOW [024A127A], FAST [01D00C2A000D01]
+[314367][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 3144, 80: 3144, 100: 3144], values RPM: 3380, Speed: 45, APS: 14, Gear: 1, ETemp: 75, ATemp 19, Battery: 122. SLOW [024B137A], FAST [01340D2D000E01]
+[315367][I][canbusble.cpp:314] report_msg_counters(): Counters [18: 3154, 80: 3154, 100: 3154], values RPM: 3480, Speed: 48, APS: 15, Gear: 1, ETemp: 75, ATemp 19, Battery: 122. SLOW [024B137A], FAST [01980D30000F01]
+```
+
 ### OTA updates with DoubleResetDetector
 
 When the unit is tucked away, updates via USB are inconvenient. The "Double Reset Detector" library will be triggered after a double "reset" activity within 5 seconds (configurable), with these series of actions
@@ -100,7 +133,11 @@ When the unit is tucked away, updates via USB are inconvenient. The "Double Rese
 
 The AP name is based on the `DEVICE_ID`  macro, and it includes the 4 digits identifying the unit. At that point, mDNS starts and after connecting to the ESP32 Access Point you can upload to the `ducan.local` device.
 
-To activate the OTA functionality, define the compiler marco `DRD_OTA`.
+- To activate the OTA functionality, define the compiler marco `ENABLE_OTA_WITH_DRD`
+- Define the Access Point password with macro `WIFI_PWD` (default `123456789`)
+- Press Reset once, wait 1 second, press Reset again to enable
+
+**Note**: the double reset needs about 1 second between each action for the bootstrap procedure to correclty identify the reset.
 
 ## Schematics
 
